@@ -1,11 +1,11 @@
 name: "VIP / Executive impersonation in subject (untrusted)"
 description: |
-  Sender subject contains the display name of a user in the $org_vips list, and the sender has never been seen before.
+  Sender subject contains both the first name and last name of a user in the $org_vips list, and the sender has never been seen before.
 
   The $org_vips list must first be manually connected to a VIP group of your upstream provider (Google Workspace and Microsoft 365 only) in order for this rule to work.
   Once connected, the list will be automatically synced and kept up-to-date. For more information, see the $org_vips documentation: https://docs.sublimesecurity.com/docs/configure-org_vips-list
 
-  This rule is recommended to be used on a relatively small list of VIPs, and is meant to reduce attack surface by detecting *any* message that matches the protected list of display names from a first-time or unsolicited sender.
+  This rule is recommended to be used on a relatively small list of VIPs, and is meant to reduce attack surface by detecting *any* message that matches the protected list of names from a first-time or unsolicited sender. The rule checks for both first and last name components with allowance for common titles like "Mr.", "Mrs.", and "Dr."
 
   Additional rule logic can be added to look for suspicious subjects, suspicious links, etc.
 type: "rule"
@@ -13,8 +13,28 @@ severity: "medium"
 source: |
   type.inbound
   and any($org_vips,
-          strings.contains(subject.subject, .display_name)
-          and strings.contains(.display_name, " ")
+          (
+            // Match full names with word boundaries, allowing for titles and common variations
+            regex.icontains(subject.subject, 
+              concat(
+                "\\b(mr\\.?|mrs\\.?|ms\\.?|dr\\.?|prof\\.?)?\\s*",
+                regex.escape(.first_name),
+                "\\s+",
+                regex.escape(.last_name),
+                "\\b"
+              )
+            )
+            or
+            // Fallback to substring matching with length validation
+            (
+              strings.contains(subject.subject, .first_name)
+              and strings.contains(subject.subject, .last_name)
+              // we cannot run sum() on any lists. So we take the length of the first and last name
+              // allow extra characters for titles like "Mr.", "Mrs.", "Dr."
+              and length(.first_name) + length(.last_name) <= length(subject.subject) + 6
+            )
+          )
+          and .last_name is not null and .first_name is not null
   )
   and (
     // ignore personal <> work emails
@@ -43,7 +63,7 @@ source: |
     )
     or (
       profile.by_sender().any_messages_malicious_or_spam
-      and not profile.by_sender().any_false_positives
+      and not profile.by_sender().any_messages_benign
     )
   )
   
@@ -65,7 +85,7 @@ source: |
     or sender.email.domain.root_domain not in $high_trust_sender_root_domains
   )
   
-  and not profile.by_sender().any_false_positives
+  and not profile.by_sender().any_messages_benign
 
 tags:
   - "Attack surface reduction"
