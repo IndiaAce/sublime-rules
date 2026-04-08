@@ -1,0 +1,143 @@
+name: "Impersonation: Legal firm with copyright infringement notice"
+description: "Detects messages impersonating legal firms or copyright enforcement entities with extensive legal terminology, threatening language, and urgent compliance demands."
+type: "rule"
+severity: "medium"
+source: |
+  type.inbound
+  and (
+    length(body.current_thread.text) < 5000
+    and sum(map(body.previous_threads, length(.text))) < 5000
+  )
+  and 0 < length(body.links) < 10
+  
+  // common strings in subject or base
+  and (
+    2 of (
+      strings.ilike(subject.base, '*Content*'),
+      strings.ilike(subject.base, '*Compliance*'),
+      strings.ilike(subject.base, '*Review*'),
+      strings.ilike(subject.base, '*Legal*'),
+      strings.ilike(subject.base, '*Formal*'),
+      strings.ilike(subject.base, '*LLP*'),
+      strings.ilike(subject.base, '*Unauthorized*'),
+      strings.ilike(subject.base, '*Trademark*'),
+      strings.ilike(subject.base, '*Law*'),
+      strings.ilike(subject.base, '*Enforcement*'),
+      strings.ilike(subject.base, '*Copyright*'),
+      strings.ilike(subject.base, '*Violat*'),
+      strings.ilike(subject.base, '*Intellectual*'),
+      strings.ilike(subject.base, '*Concerning*'),
+      strings.ilike(subject.base, '*Notice*'),
+      strings.ilike(subject.base, '*Clarification*'),
+      strings.ilike(subject.base, '*Matter*'),
+      strings.ilike(sender.display_name, '*Content*'),
+      strings.ilike(sender.display_name, '*Copyright*'),
+      strings.ilike(sender.display_name, '*Review*'),
+      strings.ilike(sender.display_name, '*Legal*'),
+      strings.ilike(sender.display_name, '*Investigation*'),
+      strings.ilike(sender.display_name, '*LLP*'),
+      strings.ilike(sender.display_name, '*Law*'),
+      strings.ilike(sender.display_name, '*Intellectual*'),
+      strings.ilike(sender.display_name, '*Notice*'),
+      strings.ilike(sender.display_name, '*Matter*')
+    )
+  )
+  
+  // body strings with nlu enrichment
+  and (
+    (
+      regex.icontains(body.html.display_text,
+                      'infring(?:(?:e|ment)|ing)|copyright|intellectual property|protected works?'
+      )
+      and regex.icontains(body.html.display_text,
+                          '\W(?:pdf|docx)|infringing link|proof of rights record|documentation|reference'
+      )
+    )
+    and 3 of (
+      // representation
+      regex.icontains(body.html.display_text,
+                      'we (?:represent|act for)|on behalf of|(?:legal|authorized) (?:proxy|representative|counsel)'
+      ),
+  
+      // threat
+      regex.icontains(body.html.display_text,
+                      '(?:hereby|formal(?:ly)?) (?:noti(?:fy|fies)|informs?) you|legal (?:proceeding|remedie|action)s?|civil litigation|damages|(?:official|formal) (?:noti(?:ce|fication)|declaration)|(?:authorization|justification) for us(?:e|age)|legal claim'
+      ),
+  
+      // demand
+      regex.icontains(body.html.display_text,
+                      'remedial requirements?|action required|required actions?|failure to comply|evaluate|\breview\b'
+      ),
+      regex.icontains(body.html.display_text,
+                      '(?:written|receive).(?:confirmation|reply)|confirm(ing)? completion|confirm.{0,15}in writing'
+      ),
+  
+      // evidence
+      regex.icontains(body.html.display_text,
+                      '(?:supporting|evidentiary).(?:file|record|context|materials)|evidence|rights holder.?[-:]'
+      ),
+    )
+    and (
+      (
+        any(ml.nlu_classifier(body.current_thread.text).topics,
+            .name == "Legal and Compliance"
+        )
+        and not any(ml.nlu_classifier(body.current_thread.text).topics,
+                    .name == "Events and Webinars"
+        )
+      )
+      or (
+        any(body.previous_threads,
+            any(ml.nlu_classifier(.text).topics, .name == "Legal and Compliance")
+        )
+        and not (
+          any(body.previous_threads,
+              any(ml.nlu_classifier(.text).topics, .name == "Events and Webinars")
+          )
+        )
+      )
+    )
+  )
+  
+  // negate legitimate conversations
+  and not (subject.is_reply or subject.is_forward)
+  
+  // remove phrase from legitimate complaint
+  and not regex.icontains(body.html.display_text,
+                          '(?:we are passing the notice below|content has been removed|removed from our website|notice of intended action|I have not granted|I am the original creator|content you reported has been removed|complaint will be carefully reviewed|provide a list of violations|document confirming your right to act)'
+  )
+  
+  // not copyright reports
+  and not regex.icontains(body.html.display_text,
+                          '(?:confirmation|received).{0,100}copyright report'
+  )
+  
+  // verified dmca receiving/sending address
+  and not any([recipients.cc, recipients.to, recipients.bcc],
+              any(.,
+                  .email.email in (
+                    'dmca@vimeo.com',
+                    'dmca@support.epicgames.com',
+                    'takedowns@doppel.com',
+                    'ipenforcement@epicgames.com'
+                  )
+              )
+  )
+  and not (
+    sender.email.domain.root_domain in ("edwinjamesip.com", "githubsupport.com")
+    and headers.auth_summary.dmarc.pass
+  )
+attack_types:
+  - "BEC/Fraud"
+  - "Extortion"
+tactics_and_techniques:
+  - "Impersonation: Brand"
+  - "Social engineering"
+detection_methods:
+  - "Content analysis"
+  - "Header analysis"
+  - "Sender analysis"
+id: "d67bdded-c431-5ad0-88fd-d089915918a3"
+og_id: "85bf58f6-3891-56ea-ae0a-d88073ade20f"
+testing_pr: 4220
+testing_sha: 1b977196bea102a69d387997275dffa9763232d3
