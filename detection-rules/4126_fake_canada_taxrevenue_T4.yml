@@ -1,0 +1,36 @@
+name: "Brand impersonation: Canada Revenue Agency with attachment"
+description: "Detects messages impersonating the Canada Revenue Agency (CRA) with attachments, using common tax-related subjects in both English and French, and containing CRA-related content in the message body."
+type: "rule"
+severity: "medium"
+source: |
+  type.inbound
+  and regex.icontains(sender.display_name, '(?:Canada Revenue Agency|\bCRA\b)')
+  and any(ml.nlu_classifier(body.current_thread.text).topics,
+          .name in (
+            "Reminders and Notifications",
+            "Security and Authentication",
+            "Request to View Invoice"
+          )
+          and .confidence != "low"
+  )
+  and not (
+    sender.email.domain.root_domain == 'cra-arc.gc.ca'
+    and coalesce(headers.auth_summary.dmarc.pass, false)
+  )
+attack_types:
+  - "BEC/Fraud"
+  - "Credential Phishing"
+  - "Malware/Ransomware"
+tactics_and_techniques:
+  - "Impersonation: Brand"
+  - "Social engineering"
+  - "PDF"
+detection_methods:
+  - "Content analysis"
+  - "File analysis"
+  - "Header analysis"
+  - "Sender analysis"
+id: "a1af76b1-6080-5489-bf8b-c5a7b7cbb725"
+og_id: "72607c4c-52dc-5df6-b547-54ee321b7a7a"
+testing_pr: 4126
+testing_sha: 8a50056d4dae0aeb9e7e6c0b380682dfb0c104e5
