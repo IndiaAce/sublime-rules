@@ -127,6 +127,10 @@ source: |
            .name == "benign" and .confidence == "high"
     )
   )
+  and not (
+    sender.email.email == "email@email.monarch.com"
+    and coalesce(headers.auth_summary.dmarc.pass, false)
+  )
   
   // not a forward or reply
   and (headers.in_reply_to is null or length(headers.references) == 0)
@@ -154,4 +158,4 @@ detection_methods:
 id: "216897d2-a21f-54b7-9b5e-ab46d1b8bebd"
 og_id: "6196767e-6264-5833-96f3-d1e34424d7b5"
 testing_pr: 4373
-testing_sha: 0487b4a024ed503beb041e5223d88412701b4b6d
+testing_sha: d2ea78cc3c40675b41f8d2d4bb641509634e9c60
